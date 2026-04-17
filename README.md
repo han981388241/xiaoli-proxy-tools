@@ -17,7 +17,7 @@ pip install -r requirements.txt
 如果你是在仓库内直接运行示例，也可以使用虚拟环境里的 Python：
 
 ```bash
-.\venv\Scripts\python.exe examples\test_proxy_requests.py
+.\venv\Scripts\python.exe examples\proxy_requests.py
 ```
 
 ## 核心行为
@@ -256,11 +256,10 @@ with ProxySchedulerClient(
 ## 示例文件
 
 - `examples/generate_proxy.py`
-- `examples/test_proxy_requests.py`
+- `examples/proxy_requests.py`
 - `examples/advanced_proxy_usage.py`
 
 ## 注意事项
 
-- 不要把真实 `user_id`、`password`、完整 `proxy_url` 提交到仓库
 - `proxy_url` 中包含明文代理凭证，打印和记录日志时应谨慎
 - 如果你只想拿代理，不要调用 `client.get()`，直接使用 `DynamicProxyGenerator` 或 `client.generate_proxy()`
