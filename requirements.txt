@@ -1,0 +1,2 @@
+requests>=2.33.1
+curl-cffi==0.14.0
