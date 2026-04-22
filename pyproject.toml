@@ -40,7 +40,6 @@ Documentation = "https://docs.ipweb.cc/user-guide/"
 
 [tool.setuptools]
 include-package-data = true
-py-modules = ["base_client"]
 
 [tool.setuptools.packages.find]
 where = ["."]
