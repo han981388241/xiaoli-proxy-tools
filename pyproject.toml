@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ipweb-proxy-sdk"
 version = "0.1.0"
-description = "Python SDK for IPWEB dynamic proxy generation."
+description = "Python SDK for IPWEB dynamic proxy generation plus an optional split async request client package."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
   { name = "xiaoli-proxy-tools maintainers" }
 ]
-keywords = ["proxy", "ipweb", "dynamic-proxy", "sdk"]
+keywords = ["proxy", "ipweb", "dynamic-proxy", "async-client", "sdk"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
@@ -24,6 +24,22 @@ classifiers = [
 ]
 dependencies = []
 
+[project.optional-dependencies]
+client = ["aiohttp>=3.9.0"]
+socks = ["aiohttp-socks>=0.8.0"]
+fast = [
+  "aiodns>=3.1.0",
+  "uvloop>=0.19.0; sys_platform != 'win32'",
+]
+hugepool = ["psutil>=5.9.0"]
+all = [
+  "aiohttp>=3.9.0",
+  "aiohttp-socks>=0.8.0",
+  "aiodns>=3.1.0",
+  "uvloop>=0.19.0; sys_platform != 'win32'",
+  "psutil>=5.9.0",
+]
+
 [project.urls]
 Homepage = "https://docs.ipweb.cc/user-guide/"
 Documentation = "https://docs.ipweb.cc/user-guide/"
@@ -33,7 +49,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["proxy_scheduler*"]
+include = ["proxy_scheduler", "proxy_scheduler.*", "proxy_scheduler_client", "proxy_scheduler_client.*"]
 
 [tool.setuptools.package-data]
 proxy_scheduler = ["data/*.json"]
