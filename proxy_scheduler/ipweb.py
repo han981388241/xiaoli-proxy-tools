@@ -11,11 +11,10 @@ Example without state/city restrictions:
 
 from __future__ import annotations
 
-import logging
 import re
 import uuid
 from dataclasses import dataclass
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, urlsplit
 from .geo import load_geo_index
 
 
@@ -29,18 +28,6 @@ _PROTOCOL_ALIASES = {
     "socket5": "socks5",
     "socket5h": "socks5h",
 }
-_CLIENT_ALIASES = {
-    "request": "requests",
-    "requests": "requests",
-    "httpx": "httpx",
-    "aiohttp": "aiohttp",
-    "aiohttp-socks": "aiohttp_socks",
-    "aiohttp_socks": "aiohttp_socks",
-    "playwright": "playwright",
-}
-logger = logging.getLogger(__name__)
-
-
 class Gateway:
     """Normalize logical gateway names to IPWeb tunnel hosts."""
 
@@ -68,108 +55,91 @@ class Gateway:
 
 @dataclass(frozen=True)
 class PreparedProxy:
+    """
+    动态代理生成后的标准返回对象。
+
+    Args:
+        proxy_url (str): 当前主协议对应的完整代理地址。
+        proxies (dict[str, str]): 多协议代理地址映射。
+        username (str): 最终拼接后的代理认证用户名。
+        gateway (str): 当前使用的代理网关地址，格式为 host:port。
+        host (str): 当前代理网关主机。
+        port (int): 当前代理网关端口。
+        user (str): 当前代理认证用户名，等同于 username。
+        password (str): 当前代理认证密码。
+        protocol (str): 当前主代理地址使用的协议。
+
+    Returns:
+        None: 数据对象无返回值。
+    """
+
     proxy_url: str
     proxies: dict[str, str]
     username: str
     gateway: str
+    host: str = ""
+    port: int = DEFAULT_PORT
+    user: str = ""
+    password: str = ""
+    protocol: str = "http"
 
     @property
     def http_url(self) -> str:
+        """
+        返回 HTTP 代理地址。
+
+        Returns:
+            str: HTTP 代理地址。
+        """
+
         return self.proxies["http"]
 
     @property
     def https_url(self) -> str:
+        """
+        返回 HTTPS 代理地址。
+
+        Returns:
+            str: HTTPS 代理地址。
+        """
+
         return self.proxies["https"]
 
     @property
     def socks5_url(self) -> str:
+        """
+        返回 SOCKS5 代理地址。
+
+        Returns:
+            str: SOCKS5 代理地址。
+        """
+
         return self.proxies["socks5"]
 
     @property
     def socks5h_url(self) -> str:
+        """
+        返回 SOCKS5H 代理地址。
+
+        Returns:
+            str: SOCKS5H 代理地址。
+        """
+
         return self.proxies["socks5h"]
 
     def url_for(self, protocol: str = "http") -> str:
-        normalized = DynamicProxyClient.normalize_protocol(protocol)
-        return self.proxies[normalized]
-
-    def for_client(self, client: str, protocol: str = "http") -> dict[str, object]:
         """
-        生成不同客户端可直接使用的代理配置。
+        按协议返回代理地址。
 
         Args:
-            client (str): 客户端名称，支持 requests、httpx、aiohttp、aiohttp_socks、playwright。
             protocol (str): 代理协议，支持 http、https、socks5、socks5h。
 
         Returns:
-            dict[str, object]: 对应客户端可直接展开使用的代理参数字典。
-
-        Raises:
-            ValueError: 当客户端类型不支持，或客户端与代理协议组合不兼容时抛出。
-            ImportError: 当使用 aiohttp_socks 但未安装 aiohttp-socks 依赖时抛出。
+            str: 指定协议的代理地址。
         """
 
-        normalized_client = self._normalize_client(client)
-        proxy_url = self.url_for(protocol)
-        logger.debug(
-            "[代理适配] 生成客户端代理参数 - client=%s protocol=%s gateway=%s",
-            normalized_client,
-            DynamicProxyClient.normalize_protocol(protocol),
-            self.gateway,
-        )
-
-        if normalized_client == "requests":
-            return {"http": proxy_url, "https": proxy_url}
-
-        if normalized_client == "httpx":
-            return {"proxy": proxy_url}
-
-        if normalized_client == "aiohttp":
-            normalized_protocol = DynamicProxyClient.normalize_protocol(protocol)
-            if normalized_protocol in {"socks5", "socks5h"}:
-                raise ValueError(
-                    "aiohttp 原生只支持 HTTP 代理，请改用 client='aiohttp_socks' 处理 SOCKS 代理"
-                )
-            return {"proxy": proxy_url}
-
-        if normalized_client == "aiohttp_socks":
-            try:
-                from aiohttp_socks import ProxyConnector
-            except ImportError as exc:
-                raise ImportError(
-                    "aiohttp-socks is not installed. Run: pip install aiohttp-socks"
-                ) from exc
-            return {"connector": ProxyConnector.from_url(proxy_url)}
-
-        if normalized_client == "playwright":
-            return self._playwright_proxy(proxy_url)
-
-        raise ValueError(f"unsupported proxy client: {client!r}")
-
-    @staticmethod
-    def _normalize_client(client: str) -> str:
-        key = str(client or "").strip().lower()
-        try:
-            return _CLIENT_ALIASES[key]
-        except KeyError as exc:
-            supported = ", ".join(sorted(_CLIENT_ALIASES))
-            raise ValueError(
-                f"unsupported proxy client: {client!r}. Supported: {supported}"
-            ) from exc
-
-    @staticmethod
-    def _playwright_proxy(proxy_url: str) -> dict[str, str]:
-        parsed = urlsplit(proxy_url)
-        if not parsed.hostname or parsed.port is None:
-            raise ValueError(f"invalid proxy url for Playwright: {proxy_url!r}")
-
-        result = {"server": f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"}
-        if parsed.username:
-            result["username"] = unquote(parsed.username)
-        if parsed.password:
-            result["password"] = unquote(parsed.password)
-        return result
-
+        normalized = DynamicProxyClient.normalize_protocol(protocol)
+        return self.proxies[normalized]
 
 @dataclass(frozen=True)
 class _NormalizedProxyOptions:
@@ -202,6 +172,11 @@ class DynamicProxyClient:
         self.user_id = self._require_non_empty("user_id", user_id)
         self.password = self._require_non_empty("password", password)
         self.gateway = Gateway.normalize(gateway)
+        parsed_gateway = urlsplit(f"//{self.gateway}")
+        if not parsed_gateway.hostname or parsed_gateway.port is None:
+            raise ValueError(f"invalid proxy gateway: {self.gateway!r}")
+        self.host = parsed_gateway.hostname
+        self.port = parsed_gateway.port
         self._encoded_password = quote(self.password, safe="")
 
     def build_proxy(
@@ -236,6 +211,11 @@ class DynamicProxyClient:
             proxies=proxies,
             username=username,
             gateway=self.gateway,
+            host=self.host,
+            port=self.port,
+            user=username,
+            password=self.password,
+            protocol=options.protocol,
         )
 
     def build_proxy_many(
@@ -284,6 +264,11 @@ class DynamicProxyClient:
                 proxies=proxies,
                 username=username,
                 gateway=gateway,
+                host=self.host,
+                port=self.port,
+                user=username,
+                password=self.password,
+                protocol=selected_protocol,
             ))
 
         return result

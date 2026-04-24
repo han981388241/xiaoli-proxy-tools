@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ipweb-proxy-sdk"
 version = "0.1.0"
-description = "Python SDK for IPWEB dynamic proxy generation and async proxy requests."
+description = "Python SDK for IPWEB dynamic proxy generation."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -24,16 +24,6 @@ classifiers = [
 ]
 dependencies = []
 
-[project.optional-dependencies]
-client = ["curl-cffi>=0.14.0"]
-requests = ["requests>=2.31.0"]
-requests-socks = ["requests[socks]>=2.31.0"]
-httpx = ["httpx>=0.24.0"]
-httpx-socks = ["httpx[socks]>=0.24.0"]
-aiohttp = ["aiohttp>=3.9.0"]
-aiohttp-socks = ["aiohttp>=3.9.0", "aiohttp-socks>=0.10.1"]
-playwright = ["playwright>=1.40.0"]
-
 [project.urls]
 Homepage = "https://docs.ipweb.cc/user-guide/"
 Documentation = "https://docs.ipweb.cc/user-guide/"
@@ -43,7 +33,7 @@ include-package-data = true
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["proxy_scheduler*", "proxy_client*"]
+include = ["proxy_scheduler*"]
 
 [tool.setuptools.package-data]
 proxy_scheduler = ["data/*.json"]

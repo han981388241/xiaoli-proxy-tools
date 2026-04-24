@@ -27,11 +27,12 @@ def main() -> None:
     generator = DynamicProxyGenerator(
         user_id="YOU_USER_ID",
         password="YOU_USER_PASSWORD",
-        gateway="us",
+        gateway="global",
     )
 
     print("[生成器示例] 开始生成代理 - country_code: US")
     proxy = generator.generate(
+        count=1,  # 自定义返回数量
         country_code="US",
         # state_code="2079",
         # city_code="75544",
@@ -39,6 +40,15 @@ def main() -> None:
     )
 
     print(f"[生成器示例] 生成完成 - proxy_url: {proxy.proxy_url}")
+    print(f"[生成器示例] 生成完成 - http_url: {proxy.http_url}")
+    print(f"[生成器示例] 生成完成 - https_url: {proxy.https_url}")
+    print(f"[生成器示例] 生成完成 - socks5_url: {proxy.socks5_url}")
+    print(f"[生成器示例] 生成完成 - socks5h_url: {proxy.socks5h_url}")
+    print(f"[生成器示例] 代理主机 - host: {proxy.host}")
+    print(f"[生成器示例] 代理端口 - port: {proxy.port}")
+    print(f"[生成器示例] 代理用户 - user: {proxy.user}")
+    print(f"[生成器示例] 代理密码 - password: {proxy.password}")
+    print(f"[生成器示例] 代理协议 - protocol: {proxy.protocol}")
 
 
 if __name__ == "__main__":
