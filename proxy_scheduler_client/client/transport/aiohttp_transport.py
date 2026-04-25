@@ -360,6 +360,7 @@ class AiohttpTransport(Transport):
 
         aiohttp = self._aiohttp or load_aiohttp()
         message = str(exc)
+        lowered_message = message.lower()
         http_proxy_error = getattr(aiohttp, "ClientHttpProxyError", ())
         proxy_connection_error = getattr(aiohttp, "ClientProxyConnectionError", ())
         tls_errors = tuple(
@@ -371,11 +372,20 @@ class AiohttpTransport(Transport):
             )
             if item is not None
         )
+        auth_markers = (
+            "authentication failure",
+            "username and password authentication failure",
+            "proxy authentication",
+            "invalid username or password",
+            "login failed",
+        )
 
         if http_proxy_error and isinstance(exc, http_proxy_error):
             if getattr(exc, "status", None) == 407:
                 return ProxyAuthError(message, proxy_snapshot=self.proxy_snapshot, request_tag=spec.tag)
             return ProxyConnectionError(message, proxy_snapshot=self.proxy_snapshot, request_tag=spec.tag)
+        if any(marker in lowered_message for marker in auth_markers):
+            return ProxyAuthError(message, proxy_snapshot=self.proxy_snapshot, request_tag=spec.tag)
         if proxy_connection_error and isinstance(exc, proxy_connection_error):
             return ProxyConnectionError(message, proxy_snapshot=self.proxy_snapshot, request_tag=spec.tag)
         if tls_errors and isinstance(exc, tls_errors):

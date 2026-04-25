@@ -91,7 +91,7 @@ async def main() -> None:
         },
         # params={"scene": "demo", "token": "sensitive-query-token"},
         # json={"message": "hello", "password": "secret-password"},
-        # timeout=20,
+        timeout=20,
         # tag="curl-spec-demo",
         # meta={
         #     "allow_redirects": True,
@@ -123,7 +123,7 @@ async def main() -> None:
     print("[Curl示例] RequestSpec PowerShell 单行脱敏 curl 如下：")
     print(spec_curl_powershell)
 
-    print("[Curl示例] 开始创建异步客户端并注入会话头与 Cookie")
+    print("[Curl示例] 协议为 http_url 开始创建异步客户端并注入会话头与 Cookie")
     async with ProxyClient(
         proxy_url=proxy.http_url,
         limits=Limits(concurrency=1, connector_limit=1),
@@ -139,7 +139,7 @@ async def main() -> None:
         resp = await client.request(
             spec
         )
-        # print(resp.text())
+        print(resp.text())
         # print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: cmd")
         # client_curl_cmd = client.request_to_curl(
         #     spec
@@ -154,7 +154,7 @@ async def main() -> None:
         # print("[Curl示例] ProxyClient PowerShell 单行脱敏 curl 如下：")
         # print(client_curl_powershell)
 
-    print("[Curl示例] 协议为 socks5 开始创建异步客户端并注入会话头与 Cookie")
+    print("[Curl示例] 协议为 socks5_url 开始创建异步客户端并注入会话头与 Cookie")
     async with ProxyClient(
         proxy_url=proxy.socks5_url,
         limits=Limits(concurrency=1, connector_limit=1),
