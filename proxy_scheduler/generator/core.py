@@ -20,7 +20,8 @@ from .geo import load_geo_index
 DEFAULT_PORT = 7778
 MIN_DURATION_MINUTES = 1
 MAX_DURATION_MINUTES = 1440
-MAX_GENERATE_COUNT = 100_000
+MAX_GENERATE_COUNT = 10_000_000
+IN_MEMORY_LIST_GENERATE_THRESHOLD = 100_000
 _SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 _USER_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 _PROTOCOL_ALIASES = {
@@ -601,12 +602,11 @@ class DynamicProxyClient:
         )
         selected_protocol = options.protocol
         build_urls = self._build_proxy_urls
-        create_sid = generate_session_id
-        seen_proxy_urls: set[str] = set()
         yielded_count = 0
+        session_id_stream = self._iter_unique_session_ids(count)
 
         while yielded_count < count:
-            sid = create_sid()
+            sid = next(session_id_stream)
             proxies, username = build_urls(
                 sid=sid,
                 country_code=options.country_code,
@@ -614,10 +614,6 @@ class DynamicProxyClient:
                 city_code=options.city_code,
                 duration_minutes=options.duration_minutes,
             )
-            proxy_url = proxies[selected_protocol]
-            if proxy_url in seen_proxy_urls:
-                continue
-            seen_proxy_urls.add(proxy_url)
             yielded_count += 1
             yield self._create_prepared_proxy(
                 proxies=proxies,
@@ -833,6 +829,34 @@ class DynamicProxyClient:
         if value > MAX_GENERATE_COUNT:
             raise ValueError(f"count must be <= {MAX_GENERATE_COUNT}")
         return value
+
+    def should_stream_generate(self, count: int) -> bool:
+        """
+        判断当前生成数量是否应自动切换为流式返回。
+
+        Args:
+            count (int): 标准化后的生成数量。
+
+        Returns:
+            bool: 需要流式返回时返回 True。
+        """
+
+        return count > IN_MEMORY_LIST_GENERATE_THRESHOLD
+
+    def _iter_unique_session_ids(self, count: int) -> Iterator[str]:
+        """
+        为单次批量生成按顺序产出全局唯一的 32 位十六进制会话标识。
+
+        Args:
+            count (int): 本次需要生成的数量。
+
+        Yields:
+            str: 32 位十六进制会话标识。
+        """
+
+        call_prefix = uuid.uuid4().hex[:16]
+        for index in range(count):
+            yield f"{call_prefix}{index:016x}"
 
     @staticmethod
     def _require_non_empty(name: str, value: str) -> str:

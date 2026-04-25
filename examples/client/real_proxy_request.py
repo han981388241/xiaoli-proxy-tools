@@ -107,8 +107,8 @@ async def main() -> None:
             method="GET",
             url=request_url,
             headers={
-                "accept": "application/json,text/plain,*/*",
-                "user-agent": "ipweb-proxy-sdk-real-test/0.1.0",
+                "Accept": "application/json,text/plain,*/*",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
             },
             timeout=timeout,
             tag=f"real-test-{index}",

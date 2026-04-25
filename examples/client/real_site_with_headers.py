@@ -130,7 +130,6 @@ async def main() -> None:
             meta={"verify": verify, "allow_redirects": True},
             return_exceptions=True,
         )
-
         if response.error is not None:
             print(
                 f"[真实网站示例] 请求失败 - URL: {response.url} 状态: {response.status} "

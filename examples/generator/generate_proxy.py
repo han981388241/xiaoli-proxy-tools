@@ -65,6 +65,21 @@ def main() -> None:
         gateway=gateway,
     )
 
+    print(f"[生成器示例] 查询全部地区代码")
+    countries = generator.list_countries(with_names=True)
+    print(countries)
+
+    print(f"[生成器示例] 查询州")
+    states = generator.list_states("AR", with_names=True)
+    print(states)
+
+    print(f"[生成器示例] 查询城市")
+    cities = generator.list_cities("AR",with_names=True)
+    print(" 指定国家US  对应州state： {}".format(cities))
+
+    state_cities = generator.list_cities("AR", state_code="1000", with_names=True)
+    print(" 指定国家US 指定指定州 对应城市cities： {}".format(state_cities))
+
     print(f"[生成器示例] 查询地区代码 - country_code: {country_code}")
     if country_code != "000":
         states = generator.list_states(country_code)

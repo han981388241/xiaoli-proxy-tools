@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 from .core import DynamicProxyClient, Gateway, PreparedProxy
 from .geo import load_geo_index
@@ -54,7 +54,7 @@ class DynamicProxyGenerator:
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
-    ) -> PreparedProxy | list[PreparedProxy]:
+    ) -> PreparedProxy | list[PreparedProxy] | Iterator[PreparedProxy]:
         """
         统一生成动态代理，单条和批量都通过此入口完成。
 
@@ -68,7 +68,7 @@ class DynamicProxyGenerator:
             protocol (str): 主代理协议。
 
         Returns:
-            PreparedProxy | list[PreparedProxy]: 单条或多条代理对象。
+            PreparedProxy | list[PreparedProxy] | Iterator[PreparedProxy]: 单条代理对象、小批量列表或大批量流式迭代器。
 
         Raises:
             ValueError: 参数不合法时抛出。
@@ -80,6 +80,16 @@ class DynamicProxyGenerator:
         if count > 1:
             if session_id is not None:
                 raise ValueError("session_id cannot be used when count > 1")
+            if self.client.should_stream_generate(count):
+                return self.client.iter_build_proxy(
+                    count,
+                    country_code=country_code,
+                    duration_minutes=duration_minutes,
+                    state_code=state_code,
+                    city_code=city_code,
+                    protocol=protocol,
+                    validate=True,
+                )
             return self.client.build_proxy_many(
                 count,
                 country_code=country_code,
@@ -167,8 +177,14 @@ class DynamicProxyGenerator:
             ValueError: 参数不合法时抛出。
         """
 
+        normalized_count = self.client._normalize_count(count)
+        if self.client.should_stream_generate(normalized_count):
+            raise ValueError(
+                "generate_many() materializes the full result list in memory; "
+                "for huge counts use generate(count=...) and consume the iterator"
+            )
         result = self.generate(
-            count=count,
+            count=normalized_count,
             country_code=country_code,
             duration_minutes=duration_minutes,
             session_id=None,
@@ -178,26 +194,45 @@ class DynamicProxyGenerator:
         )
         return result if isinstance(result, list) else [result]
 
-    def list_countries(self) -> list[str]:
+    def list_countries(self, *, with_names: bool = False) -> list[str] | list[dict[str, str]]:
         """
-        返回 SDK 内置地区数据支持的国家代码列表。
+        返回 SDK 内置地区数据支持的国家代码列表，或带名称的国家信息列表。
+
+        Args:
+            with_names (bool): 是否同时返回国家中文名和英文名。
 
         Returns:
-            list[str]: 国家代码列表。
+            list[str] | list[dict[str, str]]: 国家代码列表，或带名称的国家信息列表。
         """
 
         geo = load_geo_index()
-        return sorted(geo.countries)
+        countries = sorted(geo.countries)
+        if not with_names:
+            return countries
+        return [
+            {
+                "country_code": country_code,
+                "country_name": geo.country_names_by_code.get(country_code, country_code),
+                "country_name_en": geo.country_names_en_by_code.get(country_code, country_code),
+            }
+            for country_code in countries
+        ]
 
-    def list_states(self, country_code: str) -> list[str]:
+    def list_states(
+        self,
+        country_code: str,
+        *,
+        with_names: bool = False,
+    ) -> list[str] | list[dict[str, str]]:
         """
-        返回指定国家支持的州代码列表。
+        返回指定国家支持的州代码列表，或带国家与地区名称的信息列表。
 
         Args:
             country_code (str): 国家代码。
+            with_names (bool): 是否同时返回国家中文名、国家英文名和地区名称。
 
         Returns:
-            list[str]: 州代码列表。
+            list[str] | list[dict[str, str]]: 州代码列表，或带名称的地区信息列表。
 
         Raises:
             ValueError: 国家代码不合法或不支持时抛出。
@@ -205,18 +240,38 @@ class DynamicProxyGenerator:
 
         country = self._require_supported_country(country_code)
         geo = load_geo_index()
-        return sorted(geo.states_by_country.get(country, frozenset()))
+        states = sorted(geo.states_by_country.get(country, frozenset()))
+        if not with_names:
+            return states
+        state_names = geo.state_names_by_country.get(country, {})
+        return [
+            {
+                "country_code": country,
+                "country_name": geo.country_names_by_code.get(country, country),
+                "country_name_en": geo.country_names_en_by_code.get(country, country),
+                "state_code": state_code,
+                "state_name": state_names.get(state_code, state_code),
+            }
+            for state_code in states
+        ]
 
-    def list_cities(self, country_code: str, state_code: str = "") -> list[str]:
+    def list_cities(
+        self,
+        country_code: str,
+        state_code: str = "",
+        *,
+        with_names: bool = False,
+    ) -> list[str] | list[dict[str, str]]:
         """
-        返回指定国家或指定州支持的城市代码列表。
+        返回指定国家或指定州支持的城市代码列表，或带国家、地区、城市名称的信息列表。
 
         Args:
             country_code (str): 国家代码。
             state_code (str): 州代码，为空时返回该国家全部城市代码。
+            with_names (bool): 是否同时返回国家中文名、国家英文名、地区名称和城市名称。
 
         Returns:
-            list[str]: 城市代码列表。
+            list[str] | list[dict[str, str]]: 城市代码列表，或带名称的城市信息列表。
 
         Raises:
             ValueError: 国家或州代码不合法时抛出。
@@ -225,16 +280,47 @@ class DynamicProxyGenerator:
         country = self._require_supported_country(country_code)
         state = self.client.normalize_location_code(state_code)
         geo = load_geo_index()
+        city_names = geo.city_names_by_country.get(country, {})
+        state_names = geo.state_names_by_country.get(country, {})
 
         if not state:
-            return sorted(geo.cities_by_country.get(country, frozenset()))
+            cities = sorted(geo.cities_by_country.get(country, frozenset()))
+            if not with_names:
+                return cities
+            city_to_state = geo.city_to_state_by_country.get(country, {})
+            return [
+                {
+                    "country_code": country,
+                    "country_name": geo.country_names_by_code.get(country, country),
+                    "country_name_en": geo.country_names_en_by_code.get(country, country),
+                    "state_code": city_to_state.get(city_code, ""),
+                    "state_name": state_names.get(city_to_state.get(city_code, ""), city_to_state.get(city_code, "")),
+                    "city_code": city_code,
+                    "city_name": city_names.get(city_code, city_code),
+                }
+                for city_code in cities
+            ]
 
         states = geo.states_by_country.get(country, frozenset())
         if state not in states:
             raise ValueError(f"invalid state_code {state!r} for country_code {country!r}")
 
         city_to_state = geo.city_to_state_by_country.get(country, {})
-        return sorted(city for city, city_state in city_to_state.items() if city_state == state)
+        cities = sorted(city for city, city_state in city_to_state.items() if city_state == state)
+        if not with_names:
+            return cities
+        return [
+            {
+                "country_code": country,
+                "country_name": geo.country_names_by_code.get(country, country),
+                "country_name_en": geo.country_names_en_by_code.get(country, country),
+                "state_code": state,
+                "state_name": state_names.get(state, state),
+                "city_code": city_code,
+                "city_name": city_names.get(city_code, city_code),
+            }
+            for city_code in cities
+        ]
 
     @staticmethod
     def proxy_urls(

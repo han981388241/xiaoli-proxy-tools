@@ -205,6 +205,88 @@ class ProxyClient:
 
         return await self._request_limited(spec, return_exceptions)
 
+    def request_to_curl(
+        self,
+        method: str | RequestSpec | dict[str, Any],
+        url: str | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
+        data: Any = None,
+        json: Any = None,
+        timeout: float | None = None,
+        tag: str | None = None,
+        meta: dict[str, Any] | None = None,
+        pretty: bool = False,
+        masked: bool = False,
+        shell: str = "auto",
+        **options: Any,
+    ) -> str:
+        """
+        将当前客户端即将发出的请求导出为 curl 命令。
+
+        Args:
+            method (str | RequestSpec | dict[str, Any]): HTTP 方法或请求规格。
+            url (str | None): 请求 URL。
+            headers (dict[str, str] | None): 请求头。
+            params (dict[str, Any] | None): 查询参数。
+            data (Any): 表单或原始请求体。
+            json (Any): JSON 请求体。
+            timeout (float | None): 单请求总超时时间。
+            tag (str | None): 请求标签。
+            meta (dict[str, Any] | None): 自定义上下文。
+            pretty (bool): 是否输出适合终端阅读的多行命令。
+            masked (bool): 是否对敏感信息脱敏。
+            shell (str): 目标终端类型，支持 auto、bash、powershell 和 cmd。
+            **options (Any): 额外请求选项，会写入 RequestSpec.meta。
+
+        Returns:
+            str: curl 命令字符串。
+        """
+
+        spec = self._build_spec(
+            method,
+            url,
+            headers=headers,
+            params=params,
+            data=data,
+            json=json,
+            timeout=timeout,
+            tag=tag,
+            meta=meta,
+            options=options,
+        )
+
+        merged_headers: dict[str, str] = {}
+        merged_headers.update(self._state.default_headers)
+        merged_headers.update(self._state.headers_sticky)
+        if self._state.user_agent and not _contains_header(merged_headers, "User-Agent"):
+            merged_headers["User-Agent"] = self._state.user_agent
+        if spec.headers:
+            merged_headers.update({str(key): str(value) for key, value in spec.headers.items()})
+
+        effective_timeout = spec.timeout if spec.timeout is not None else self.limits.total_timeout
+        final_spec = RequestSpec(
+            method=spec.method,
+            url=spec.url,
+            headers=merged_headers,
+            params=spec.params,
+            data=spec.data,
+            json=spec.json,
+            timeout=effective_timeout,
+            tag=spec.tag,
+            meta=dict(spec.meta),
+        )
+        cookie_mapping = _cookies_for_url(self._state.cookies, spec.url)
+        return final_spec.to_curl(
+            pretty=pretty,
+            masked=masked,
+            shell=shell,
+            proxy_url=self._proxy_url,
+            cookies=cookie_mapping,
+            connect_timeout=self.limits.connect_timeout,
+        )
+
     async def _request_limited(self, spec: RequestSpec, return_exceptions: bool) -> Response:
         """
         在统一并发限制内执行单个请求。
@@ -928,6 +1010,51 @@ def _response_size(response: Response) -> int:
         except OSError:
             return 0
     return len(response.content)
+
+
+def _contains_header(headers: dict[str, str], target_name: str) -> bool:
+    """
+    判断请求头映射中是否已存在指定名称。
+
+    Args:
+        headers (dict[str, str]): 请求头映射。
+        target_name (str): 目标请求头名称。
+
+    Returns:
+        bool: 存在时返回 True。
+    """
+
+    lowered = target_name.lower()
+    return any(str(name).lower() == lowered for name in headers)
+
+
+def _cookies_for_url(cookies: list[CookieRecord], url: str) -> dict[str, str]:
+    """
+    按目标 URL 的域名和路径筛选当前会话 Cookie。
+
+    Args:
+        cookies (list[CookieRecord]): 当前会话 Cookie 列表。
+        url (str): 目标请求 URL。
+
+    Returns:
+        dict[str, str]: 需要随请求发送的 Cookie 映射。
+    """
+
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or "/"
+    matched: dict[str, str] = {}
+
+    for cookie in cookies:
+        domain = str(cookie.domain or "").lstrip(".").lower()
+        cookie_path = cookie.path or "/"
+        if domain and host != domain and not host.endswith(f".{domain}"):
+            continue
+        if not path.startswith(cookie_path):
+            continue
+        matched[cookie.name] = cookie.value
+
+    return matched
 
 
 def _merge_cookie_records(

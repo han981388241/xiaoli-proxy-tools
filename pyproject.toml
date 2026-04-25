@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ipweb-proxy-sdk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python SDK for IPWEB dynamic proxy generation plus an optional split async request client package."
 readme = "README.md"
 requires-python = ">=3.10"

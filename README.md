@@ -8,6 +8,7 @@ IPWEB 动态代理 SDK。
 
 - 支持单条代理生成。
 - 支持批量代理生成。
+- 支持同一入口下的小批量列表返回和大批量流式返回。
 - 支持迭代式批量生成，适合大批量低内存场景。
 - 支持国家、州、城市代码校验。
 - 支持国家、州、城市代码查询。
@@ -128,19 +129,22 @@ SDK 不支持自定义网关；传入非官方别名或非官方地址会抛出 
 ```python
 proxy = generator.generate(country_code="US")
 proxies = generator.generate(count=10, country_code="US")
+stream = generator.generate(count=1_000_000, country_code="US")
 empty = generator.generate(count=0)
 ```
 
 返回规则：
 
 - `count=1` 返回 `PreparedProxy`。
-- `count>1` 返回 `list[PreparedProxy]`。
+- `1<count<=100000` 返回 `list[PreparedProxy]`。
+- `count>100000` 返回 `Iterator[PreparedProxy]`，适合大批量低内存场景。
 - `count=0` 返回空列表。
 - `count>1` 时不能传入 `session_id`。
+- 单次批量调用内生成的 `session_id` 和 `proxy_url` 保证本地全局唯一。
 
 参数说明：
 
-- `count`：生成数量，默认 `1`，最大 `100000`。
+- `count`：生成数量，默认 `1`，最大 `10000000`。
 - `country_code`：国家代码，默认 `"000"`，表示不限制国家。
 - `duration_minutes`：会话时长，默认 `5`，允许范围 `1` 到 `1440`。
 - `session_id`：自定义会话标识，仅单条生成可用，必须是 32 位十六进制字符串。
@@ -256,12 +260,34 @@ proxies = generator.generate_many(
 )
 ```
 
+`generate_many()` 保持旧版“完整列表返回”的语义；如果数量超过 `100000`，会直接抛错，避免把超大结果重新全部放进内存。大批量场景请继续使用同一个 `generate(count=...)` 入口。
+
 大批量低内存生成：
 
 ```python
 for proxy in generator.iter_generate(count=1000, country_code="US", protocol="http"):
     print(proxy.safe_proxy_url)
 ```
+
+同一个统一入口在超大数量时也会自动切换成流式返回：
+
+```python
+stream = generator.generate(
+    count=10_000_000,
+    country_code="US",
+    duration_minutes=5,
+    protocol="http",
+)
+
+for proxy in stream:
+    print(proxy.safe_proxy_url)
+```
+
+说明：
+
+- `generate(count=10_000_000)` 不会一次性创建一千万个 `PreparedProxy` 列表。
+- SDK 会在单次调用内按顺序生成全局唯一的 32 位十六进制 `session_id`。
+- 这里保证的是 SDK 本地生成结果不重复，不保证最终出口 IP 一定不重复。
 
 ## 地区代码查询
 
@@ -331,7 +357,7 @@ SDK 会在生成前执行参数校验：
 - `user_id` 不能为空，只支持字母、数字、下划线、点、短横线。
 - `password` 不能为空。
 - `gateway` 必须是官方支持的网关别名或官方 `gate*.ipweb.cc:7778` 地址。
-- `count` 必须是整数，范围 `0` 到 `100000`。
+- `count` 必须是整数，范围 `0` 到 `10000000`。
 - `duration_minutes` 必须是整数，范围 `1` 到 `1440`。
 - `session_id` 必须是 32 位十六进制字符串。
 - `country_code` 必须是 `000` 或两位国家代码。
@@ -372,6 +398,30 @@ pip install ipweb-proxy-sdk[all]
 - `ProcessPoolRunner`：多进程请求运行器。
 
 生产环境建议保持 `verbose=False`。`verbose=True` 会通过 `logging` 输出逐请求中文调试日志，适合排查问题，不适合百万级吞吐压测。
+
+调试时可以导出 curl 命令：
+
+```python
+spec = RequestSpec(
+    method="POST",
+    url="https://example.com/api",
+    headers={"x-trace-id": "demo"},
+    json={"name": "alice"},
+    meta={"verify": False},
+)
+
+print(spec.to_curl(masked=False, shell="bash"))
+print(client.request_to_curl("GET", "https://example.com/profile", masked=True, shell="cmd"))
+```
+
+说明：
+
+- `RequestSpec.to_curl()` 导出的是“请求规格视角”的 curl。
+- `ProxyClient.request_to_curl()` 会合并代理地址、默认头、sticky headers 和 Cookie，导出更接近实际发送态的 curl。
+- 默认 `masked=False`，会优先导出可直接执行的复现命令。
+- 需要安全写日志时，显式传 `masked=True`。
+- `shell` 支持 `auto`、`bash`、`powershell` 和 `cmd`；`auto` 会在 Windows 下默认生成 `cmd` 风格命令，其他平台默认生成 `bash` 风格命令。
+- 在 `cmd.exe` 中直接粘贴执行时，请显式使用 `shell="cmd"`；在 PowerShell 中请使用 `shell="powershell"`。
 
 单客户端示例：
 

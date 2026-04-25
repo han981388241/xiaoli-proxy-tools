@@ -34,6 +34,10 @@ class GeoCodeIndex:
     states_by_country: dict[str, frozenset[str]]
     cities_by_country: dict[str, frozenset[str]]
     city_to_state_by_country: dict[str, dict[str, str]]
+    country_names_by_code: dict[str, str]
+    country_names_en_by_code: dict[str, str]
+    state_names_by_country: dict[str, dict[str, str]]
+    city_names_by_country: dict[str, dict[str, str]]
 
 
 def repo_workbook_path() -> Path:
@@ -103,7 +107,8 @@ def build_geo_snapshot(path: Path) -> dict[str, object]:
         dict[str, object]: 地区快照字典。
     """
 
-    state_cities: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    country_names: dict[str, dict[str, str]] = {}
+    state_cities: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
 
     with zipfile.ZipFile(path) as archive:
         shared_strings = _load_shared_strings(archive)
@@ -114,18 +119,53 @@ def build_geo_snapshot(path: Path) -> dict[str, object]:
             rows = sheet_root.findall(".//a:sheetData/a:row", _XML_NS)
             for row in rows[1:]:
                 values = _read_row(row, shared_strings)
+                country_name = values.get("C", "").strip()
+                country_name_en = values.get("D", "").strip()
                 country = values.get("E", "").strip().upper()
+                state_name = values.get("F", "").strip()
                 state = values.get("G", "").strip()
+                city_name = values.get("H", "").strip()
                 city = values.get("I", "").strip()
-                if country and state and city:
-                    state_cities[country][state].append(city)
+                if not country:
+                    continue
+                country_names.setdefault(
+                    country,
+                    {
+                        "name": country_name or country,
+                        "name_en": country_name_en or country,
+                    },
+                )
+                if not state or not city:
+                    continue
+                state_entry = state_cities[country].setdefault(
+                    state,
+                    {
+                        "name": state_name or state,
+                        "cities": {},
+                    },
+                )
+                cities = state_entry["cities"]
+                assert isinstance(cities, dict)
+                cities[city] = city_name or city
 
     return {
-        "countries": sorted(state_cities),
+        "countries": sorted(country_names),
+        "country_names": {
+            country: country_names[country]
+            for country in sorted(country_names)
+        },
         "state_cities": {
             country: {
-                state: sorted(cities)
-                for state, cities in sorted(states.items())
+                state: {
+                    "name": str(details.get("name", state)),
+                    "cities": {
+                        city_code: city_name
+                        for city_code, city_name in sorted(
+                            dict(details.get("cities", {})).items()
+                        )
+                    },
+                }
+                for state, details in sorted(states.items())
             }
             for country, states in sorted(state_cities.items())
         },
@@ -149,22 +189,55 @@ def build_geo_index_from_snapshot(snapshot: dict[str, object]) -> GeoCodeIndex:
     states_by_country: dict[str, frozenset[str]] = {}
     cities_by_country: dict[str, frozenset[str]] = {}
     city_to_state_by_country: dict[str, dict[str, str]] = {}
+    country_names_by_code: dict[str, str] = {}
+    country_names_en_by_code: dict[str, str] = {}
+    state_names_by_country: dict[str, dict[str, str]] = {}
+    city_names_by_country: dict[str, dict[str, str]] = {}
+    country_names = snapshot.get("country_names", {})
+    assert isinstance(country_names, dict)
 
     for country, states in state_cities.items():
         assert isinstance(country, str)
         assert isinstance(states, dict)
         country_city_to_state: dict[str, str] = {}
+        country_city_names: dict[str, str] = {}
+        country_state_names: dict[str, str] = {}
+        country_name_record = country_names.get(country, {})
+        if isinstance(country_name_record, dict):
+            country_names_by_code[country] = str(country_name_record.get("name", country))
+            country_names_en_by_code[country] = str(country_name_record.get("name_en", country))
+        else:
+            country_names_by_code[country] = country
+            country_names_en_by_code[country] = country
 
-        for state, cities in states.items():
+        for state, state_payload in states.items():
             assert isinstance(state, str)
-            assert isinstance(cities, list)
+            state_name = state
+            if isinstance(state_payload, dict):
+                state_name = str(state_payload.get("name", state))
+                cities_payload = state_payload.get("cities", {})
+                assert isinstance(cities_payload, dict)
+                cities = sorted(str(city_code) for city_code in cities_payload.keys())
+                city_names = {
+                    str(city_code): str(city_name)
+                    for city_code, city_name in cities_payload.items()
+                }
+            else:
+                assert isinstance(state_payload, list)
+                cities = [str(city) for city in state_payload]
+                city_names = {city: city for city in cities}
+
+            country_state_names[state] = state_name
             for city in cities:
                 assert isinstance(city, str)
                 country_city_to_state[city] = state
+                country_city_names[city] = city_names.get(city, city)
 
         states_by_country[country] = frozenset(states.keys())
         cities_by_country[country] = frozenset(country_city_to_state.keys())
         city_to_state_by_country[country] = country_city_to_state
+        state_names_by_country[country] = country_state_names
+        city_names_by_country[country] = country_city_names
 
     countries = snapshot.get("countries", list(states_by_country))
     assert isinstance(countries, list)
@@ -173,6 +246,10 @@ def build_geo_index_from_snapshot(snapshot: dict[str, object]) -> GeoCodeIndex:
         states_by_country=states_by_country,
         cities_by_country=cities_by_country,
         city_to_state_by_country=city_to_state_by_country,
+        country_names_by_code=country_names_by_code,
+        country_names_en_by_code=country_names_en_by_code,
+        state_names_by_country=state_names_by_country,
+        city_names_by_country=city_names_by_country,
     )
 
 
