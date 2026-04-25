@@ -122,7 +122,7 @@ async def main() -> None:
     for index, proxy in enumerate(proxies):
         print(f"[真实请求示例] 创建独立客户端 - index: {index} proxy: {proxy.socks5h_url}")
         client = ProxyClient(
-            proxy_url=proxy.proxy_url,
+            proxy_url=proxy.socks5_url,
             limits=Limits(
                 concurrency=1,
                 connector_limit=1,

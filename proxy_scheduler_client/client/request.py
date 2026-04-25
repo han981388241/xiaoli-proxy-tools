@@ -5,11 +5,16 @@
 from __future__ import annotations
 
 import json as json_module
+import logging
 import os
 import shlex
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+_LOGGER = logging.getLogger("proxy_scheduler.curl")
+_CURL_CMD_LENGTH_WARN = 8000
+_CURL_BASH_LENGTH_WARN = 131_072
 
 _CURL_PROXY_PROTOCOL_ALIASES = {
     "": "http",
@@ -96,7 +101,8 @@ class RequestSpec:
             merged_headers["Content-Type"] = content_type
 
         command_parts: list[str] = [_curl_command_name(normalized_shell)]
-        allow_redirects = bool(meta.get("allow_redirects", True))
+        allow_redirects_value = meta.get("allow_redirects", True)
+        allow_redirects = True if allow_redirects_value is None else bool(allow_redirects_value)
         if allow_redirects:
             command_parts.append("-L")
         if insecure or meta.get("verify") is False or meta.get("ssl") is False:
@@ -105,7 +111,9 @@ class RequestSpec:
             command_parts.extend(["--connect-timeout", _quote_curl_arg(str(connect_timeout), normalized_shell)])
         if self.timeout is not None:
             command_parts.extend(["--max-time", _quote_curl_arg(str(self.timeout), normalized_shell)])
+        proxy_is_socks = False
         if proxy_url:
+            proxy_is_socks = _is_socks_proxy(proxy_url)
             command_parts.extend(_build_proxy_command_parts(proxy_url, masked=masked, shell=normalized_shell))
 
         auth_value = _extract_auth_value(meta.get("auth"))
@@ -123,6 +131,12 @@ class RequestSpec:
             command_parts.extend(["-H", _quote_curl_arg(f"{name}: {header_value}", normalized_shell)])
 
         proxy_headers = _normalize_header_items(meta.get("proxy_headers"))
+        if proxy_headers and proxy_is_socks:
+            _LOGGER.warning(
+                "[curl 导出] 已忽略 proxy_headers - 状态: skipped 原因: socks 代理不支持代理头 数量: %d",
+                len(proxy_headers),
+            )
+            proxy_headers = []
         for name, value in proxy_headers:
             proxy_header_value = _mask_header_value(name, value) if masked else value
             command_parts.extend(
@@ -134,7 +148,9 @@ class RequestSpec:
 
         rendered_url = _mask_url(final_url) if masked else final_url
         command_parts.append(_quote_curl_arg(rendered_url, normalized_shell))
-        return _render_curl_command(command_parts, pretty=pretty, shell=normalized_shell)
+        rendered = _render_curl_command(command_parts, pretty=pretty, shell=normalized_shell)
+        _warn_long_curl_command(rendered, normalized_shell, pretty=pretty, tag=self.tag)
+        return rendered
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -574,7 +590,7 @@ def _is_sensitive_key(key: str) -> bool:
 
 def _mask_url(url: str) -> str:
     """
-    脱敏 URL 中的敏感查询参数。
+    脱敏 URL 中的敏感查询参数与 userinfo。
 
     Args:
         url (str): 原始 URL。
@@ -584,14 +600,23 @@ def _mask_url(url: str) -> str:
     """
 
     parsed = urlsplit(url)
+    netloc = parsed.netloc
+    if "@" in netloc:
+        userinfo, hostinfo = netloc.rsplit("@", 1)
+        username_part = "***" if userinfo else ""
+        password_part = ":***" if ":" in userinfo else ""
+        netloc = f"{username_part}{password_part}@{hostinfo}"
+
     query_items = parse_qsl(parsed.query, keep_blank_values=True)
-    if not query_items:
+    if not query_items and netloc == parsed.netloc:
         return url
     masked_query = [
         (key, "***" if _is_sensitive_key(key) else value)
         for key, value in query_items
     ]
-    return urlunsplit(parsed._replace(query=urlencode(masked_query, doseq=True)))
+    return urlunsplit(
+        parsed._replace(netloc=netloc, query=urlencode(masked_query, doseq=True))
+    )
 
 
 def _mask_proxy_url(proxy_url: str) -> str:
@@ -731,6 +756,53 @@ def _curl_command_name(shell: str) -> str:
     if shell in {"cmd", "powershell"}:
         return "curl.exe"
     return "curl"
+
+
+def _is_socks_proxy(proxy_url: str) -> bool:
+    """
+    判断代理地址是否使用 socks 协议。
+
+    Args:
+        proxy_url (str): 代理地址。
+
+    Returns:
+        bool: 使用 socks 协议返回 True。
+    """
+
+    raw = str(proxy_url or "").strip()
+    if "://" not in raw:
+        return False
+    scheme = raw.split("://", 1)[0].lower()
+    return _CURL_PROXY_PROTOCOL_ALIASES.get(scheme, "").startswith("socks")
+
+
+def _warn_long_curl_command(rendered: str, shell: str, *, pretty: bool, tag: str | None) -> None:
+    """
+    对超长 curl 命令打印告警，避免被终端截断。
+
+    Args:
+        rendered (str): 已渲染的命令字符串。
+        shell (str): 目标终端类型。
+        pretty (bool): 是否多行模式。
+        tag (str | None): 请求标签。
+
+    Returns:
+        None: 无返回值。
+    """
+
+    if pretty:
+        return
+    threshold = _CURL_CMD_LENGTH_WARN if shell in {"cmd", "powershell"} else _CURL_BASH_LENGTH_WARN
+    if len(rendered) <= threshold:
+        return
+    _LOGGER.warning(
+        "[curl 导出] 命令过长 - shell: %s 长度: %d 阈值: %d tag: %s "
+        "建议: pretty=True 或将 body 写入文件配合 --data-binary @file",
+        shell,
+        len(rendered),
+        threshold,
+        tag or "-",
+    )
 
 
 def _build_proxy_command_parts(proxy_url: str, *, masked: bool, shell: str) -> list[str]:
