@@ -105,7 +105,7 @@ async def main() -> None:
     )
     print(f"[Curl示例] 代理生成完成 - safe: {proxy.safe_proxy_url} session_id: {proxy.session_id}")
 
-    proxy_url = proxy.http_url
+    proxy_url = proxy.socks5_url
     print(proxy_url)
     print(f"[Curl示例] 当前协议代理地址 - protocol: {protocol} proxy_url: {proxy.safe_proxy_url}")
 

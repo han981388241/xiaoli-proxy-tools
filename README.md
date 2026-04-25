@@ -57,7 +57,8 @@
 基础安装：
 
 ```bash
-pip install ipweb-proxy-sdk==0.1.2
+pip install ipweb-proxy-sdk==0.1.2(未发布)
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple ipweb-proxy-sdk==0.1.2
 ```
 
 如果需要异步请求客户端：
