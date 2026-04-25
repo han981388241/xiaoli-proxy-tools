@@ -68,7 +68,6 @@ def main() -> None:
         user_id=user_id,
         password=password,
         gateway=gateway,
-
     )
 
     print(f"[生成器示例] 查询全部地区代码")
@@ -99,14 +98,14 @@ def main() -> None:
     print("session_id长度限制32: {}".format(len(session_id)))
 
     proxy = generator.generate(
-        count=3,
+        count=1,
         country_code=country_code,
         state_code=state_code,
         city_code=city_code,
         duration_minutes=duration_minutes,
         protocol=protocol,
         # session_id=get_session,
-        session_id=session_id
+        # session_id=session_id
 
     )
     print(f"[生成器示例] 生成完成 - proxy_url: {proxy.proxy_url}")

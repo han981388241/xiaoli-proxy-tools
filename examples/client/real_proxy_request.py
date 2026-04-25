@@ -48,15 +48,16 @@ async def main() -> None:
 
     user_id = os.environ.get("IPWEB_USER_ID", "").strip()
     password = os.environ.get("IPWEB_PASSWORD", "").strip()
-    gateway = os.environ.get("IPWEB_GATEWAY", "global").strip()
+    # gateway = os.environ.get("IPWEB_GATEWAY", "global").strip()
+    gateway = os.environ.get("IPWEB_GATEWAY", "apac").strip()
     country_code = os.environ.get("IPWEB_COUNTRY_CODE", "US").strip()
     state_code = os.environ.get("IPWEB_STATE_CODE", "").strip()
     city_code = os.environ.get("IPWEB_CITY_CODE", "").strip()
     protocol = os.environ.get("IPWEB_PROTOCOL", "http").strip()
     duration_minutes = int(os.environ.get("IPWEB_DURATION_MINUTES", "5").strip())
     request_url = os.environ.get("IPWEB_TEST_URL", "https://api.ipify.org?format=json").strip()
-    request_count = int(os.environ.get("IPWEB_TEST_REQUEST_COUNT", "10").strip())
-    concurrency = int(os.environ.get("IPWEB_TEST_CONCURRENCY", "10").strip())
+    request_count = int(os.environ.get("IPWEB_TEST_REQUEST_COUNT", "100").strip())
+    concurrency = int(os.environ.get("IPWEB_TEST_CONCURRENCY", "100").strip())
     timeout = float(os.environ.get("IPWEB_TEST_TIMEOUT", "30").strip())
     verify = os.environ.get("IPWEB_VERIFY", "false").strip().lower() not in {"0", "false", "no"}
 
@@ -119,14 +120,14 @@ async def main() -> None:
 
     clients: list[ProxyClient] = []
     for index, proxy in enumerate(proxies):
-        print(f"[真实请求示例] 创建独立客户端 - index: {index} proxy: {proxy.safe_proxy_url}")
+        print(f"[真实请求示例] 创建独立客户端 - index: {index} proxy: {proxy.socks5h_url}")
         client = ProxyClient(
-            proxy_url=proxy.proxy_url,
+            proxy_url=proxy.socks5_url,
             limits=Limits(
                 concurrency=1,
                 connector_limit=1,
                 connector_limit_per_host=0,
-                connect_timeout=min(timeout, 10.0),
+                connect_timeout=min(timeout, 30.0),
                 read_timeout=timeout,
                 total_timeout=timeout,
             ),

@@ -101,12 +101,13 @@ async def main() -> None:
         #     "auth": ("spec-user", "spec-password"),
         # },
     )
-
+    proxy_url = proxy.http_url
+    print(proxy_url)
     print("[Curl示例] 开始导出 RequestSpec 单行 curl 命令 - shell: cmd")
     spec_curl_cmd = spec.to_curl(
         masked=False,
         shell="cmd",
-        proxy_url=proxy.proxy_url,
+        proxy_url=proxy_url,
         # cookies={"base_cookie": "base-cookie-value"},
     )
     print("[Curl示例] RequestSpec cmd 单行脱敏 curl 如下：")
@@ -116,7 +117,7 @@ async def main() -> None:
     spec_curl_powershell = spec.to_curl(
         masked=False,
         shell="powershell",
-        proxy_url=proxy.proxy_url,
+        proxy_url=proxy_url,
         # cookies={"base_cookie": "base-cookie-value"},
     )
     print("[Curl示例] RequestSpec PowerShell 单行脱敏 curl 如下：")
@@ -124,7 +125,38 @@ async def main() -> None:
 
     print("[Curl示例] 开始创建异步客户端并注入会话头与 Cookie")
     async with ProxyClient(
-        proxy_url=proxy.proxy_url,
+        proxy_url=proxy.http_url,
+        limits=Limits(concurrency=1, connector_limit=1),
+        default_headers={"Accept-Language": "en-US,en;q=0.9"},
+        user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36"
+            ),
+        verbose=False,
+    ) as client:
+        # client.sticky_header("X-Session-Hint", proxy.session_state_hint())
+        # client.set_cookie(CookieRecord(name="", value=""))
+        resp = await client.request(
+            spec
+        )
+        # print(resp.text())
+        # print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: cmd")
+        # client_curl_cmd = client.request_to_curl(
+        #     spec
+        # )
+        # print("[Curl示例] ProxyClient cmd 单行脱敏 curl 如下：")
+        # print(client_curl_cmd)
+        #
+        # print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: powershell")
+        # client_curl_powershell = client.request_to_curl(
+        #     spec
+        # )
+        # print("[Curl示例] ProxyClient PowerShell 单行脱敏 curl 如下：")
+        # print(client_curl_powershell)
+
+    print("[Curl示例] 协议为 socks5 开始创建异步客户端并注入会话头与 Cookie")
+    async with ProxyClient(
+        proxy_url=proxy.socks5_url,
         limits=Limits(concurrency=1, connector_limit=1),
         default_headers={"Accept-Language": "en-US,en;q=0.9"},
         user_agent=(
@@ -139,19 +171,19 @@ async def main() -> None:
             spec
         )
         print(resp.text())
-        print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: cmd")
-        client_curl_cmd = client.request_to_curl(
-            spec
-        )
-        print("[Curl示例] ProxyClient cmd 单行脱敏 curl 如下：")
-        print(client_curl_cmd)
-
-        print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: powershell")
-        client_curl_powershell = client.request_to_curl(
-            spec
-        )
-        print("[Curl示例] ProxyClient PowerShell 单行脱敏 curl 如下：")
-        print(client_curl_powershell)
+        # print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: cmd")
+        # client_curl_cmd = client.request_to_curl(
+        #     spec
+        # )
+        # print("[Curl示例] ProxyClient cmd 单行脱敏 curl 如下：")
+        # print(client_curl_cmd)
+        #
+        # print("[Curl示例] 开始导出 ProxyClient 最终请求单行 curl 命令 - shell: powershell")
+        # client_curl_powershell = client.request_to_curl(
+        #     spec
+        # )
+        # print("[Curl示例] ProxyClient PowerShell 单行脱敏 curl 如下：")
+        # print(client_curl_powershell)
 
     print("[Curl示例] 输出完成")
 

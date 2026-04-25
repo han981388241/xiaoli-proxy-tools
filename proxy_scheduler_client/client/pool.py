@@ -4,7 +4,7 @@ aiohttp 连接池构造工具。
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from typing import Any
 
 from .errors import TransportDependencyMissing
@@ -58,7 +58,7 @@ def build_connector(proxy_url: str, limits: Limits) -> tuple[Any, str | None]:
     """
 
     aiohttp = load_aiohttp()
-    scheme = urlsplit(proxy_url).scheme.lower()
+    normalized_proxy_url, scheme = _normalize_proxy_url_for_connector(proxy_url)
 
     if scheme in ("http", "https"):
         connector = aiohttp.TCPConnector(
@@ -68,7 +68,7 @@ def build_connector(proxy_url: str, limits: Limits) -> tuple[Any, str | None]:
             ttl_dns_cache=limits.dns_cache_ttl,
             force_close=False,
         )
-        return connector, proxy_url
+        return connector, normalized_proxy_url
 
     if scheme in ("socks5", "socks5h"):
         try:
@@ -80,7 +80,7 @@ def build_connector(proxy_url: str, limits: Limits) -> tuple[Any, str | None]:
                 "pip install ipweb-proxy-sdk[socks]",
             ) from exc
         connector = ProxyConnector.from_url(
-            proxy_url,
+            normalized_proxy_url,
             rdns=(scheme == "socks5h"),
             limit=limits.connector_limit,
             limit_per_host=limits.connector_limit_per_host,
@@ -89,3 +89,30 @@ def build_connector(proxy_url: str, limits: Limits) -> tuple[Any, str | None]:
         return connector, None
 
     raise ValueError(f"unsupported proxy scheme: {scheme!r}")
+
+
+def _normalize_proxy_url_for_connector(proxy_url: str) -> tuple[str, str]:
+    """
+    标准化连接器使用的代理地址，并兼容 socket5/socket5h 别名。
+
+    Args:
+        proxy_url (str): 原始代理地址。
+
+    Returns:
+        tuple[str, str]: 标准化后的代理地址和规范化协议名。
+    """
+
+    parsed = urlsplit(proxy_url)
+    scheme = parsed.scheme.lower()
+    alias_map = {
+        "socket5": "socks5",
+        "socket5h": "socks5h",
+    }
+    normalized_scheme = alias_map.get(scheme, scheme)
+    if normalized_scheme == "socks5h":
+        # aiohttp-socks / python-socks 只接受 socks5://，是否远程解析由 rdns 参数控制。
+        normalized_url = urlunsplit(parsed._replace(scheme="socks5"))
+        return normalized_url, normalized_scheme
+    if normalized_scheme != scheme:
+        return urlunsplit(parsed._replace(scheme=normalized_scheme)), normalized_scheme
+    return proxy_url, normalized_scheme

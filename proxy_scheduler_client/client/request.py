@@ -11,6 +11,16 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+_CURL_PROXY_PROTOCOL_ALIASES = {
+    "": "http",
+    "http": "http",
+    "https": "https",
+    "socks5": "socks5",
+    "socks5h": "socks5h",
+    "socket5": "socks5",
+    "socket5h": "socks5h",
+}
+
 
 @dataclass(slots=True)
 class RequestSpec:
@@ -736,8 +746,18 @@ def _build_proxy_command_parts(proxy_url: str, *, masked: bool, shell: str) -> l
         list[str]: curl 命令片段列表。
     """
 
-    parsed = urlsplit(proxy_url)
-    scheme = parsed.scheme.lower()
+    original_proxy_url = str(proxy_url).strip()
+    proxy_url_for_parse = original_proxy_url if "://" in original_proxy_url else f"http://{original_proxy_url}"
+    parsed = urlsplit(proxy_url_for_parse)
+    raw_scheme = parsed.scheme.lower() if "://" in original_proxy_url else ""
+    try:
+        scheme = _CURL_PROXY_PROTOCOL_ALIASES[raw_scheme]
+    except KeyError as exc:
+        supported = ", ".join(sorted(key for key in _CURL_PROXY_PROTOCOL_ALIASES if key))
+        raise ValueError(
+            f"unsupported proxy protocol for curl export: {raw_scheme!r}. Supported: {supported}"
+        ) from exc
+
     host = parsed.hostname or ""
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
@@ -753,10 +773,18 @@ def _build_proxy_command_parts(proxy_url: str, *, masked: bool, shell: str) -> l
             ["-U", _quote_curl_arg(_mask_auth_value(auth_value) if masked else auth_value, shell)]
         )
 
+    if not host:
+        raise ValueError("proxy_url must include a hostname for curl export")
+
     if scheme == "socks5h":
         return ["--socks5-hostname", _quote_curl_arg(host_port, shell), *auth_parts]
     if scheme == "socks5":
         return ["--socks5", _quote_curl_arg(host_port, shell), *auth_parts]
+    if scheme == "http":
+        return ["-x", _quote_curl_arg(f"http://{host_port}", shell), *auth_parts]
+    if scheme == "https":
+        return ["-x", _quote_curl_arg(f"https://{host_port}", shell), *auth_parts]
 
-    target = f"{scheme}://{host_port}" if scheme else host_port
-    return ["-x", _quote_curl_arg(target, shell), *auth_parts]
+    raise ValueError(
+        f"unsupported normalized proxy protocol for curl export: {scheme!r}"
+    )
