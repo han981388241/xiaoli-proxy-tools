@@ -105,7 +105,7 @@ async def main() -> None:
         concurrency=1,
         connector_limit=1,
         connector_limit_per_host=0,
-        connect_timeout=min(timeout, 15.0),
+        connect_timeout=min(timeout, 30.0),
         read_timeout=timeout,
         total_timeout=timeout,
     )

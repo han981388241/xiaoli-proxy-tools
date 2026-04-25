@@ -48,8 +48,8 @@ async def main() -> None:
 
     user_id = os.environ.get("IPWEB_USER_ID", "").strip()
     password = os.environ.get("IPWEB_PASSWORD", "").strip()
-    # gateway = os.environ.get("IPWEB_GATEWAY", "global").strip()
-    gateway = os.environ.get("IPWEB_GATEWAY", "apac").strip()
+    gateway = os.environ.get("IPWEB_GATEWAY", "global").strip()
+    # gateway = os.environ.get("IPWEB_GATEWAY", "apac").strip()
     country_code = os.environ.get("IPWEB_COUNTRY_CODE", "US").strip()
     state_code = os.environ.get("IPWEB_STATE_CODE", "").strip()
     city_code = os.environ.get("IPWEB_CITY_CODE", "").strip()
@@ -112,8 +112,8 @@ async def main() -> None:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
             },
             timeout=timeout,
-            # tag=f"real-test-{index}",
-            # meta={"verify": verify},
+            tag=f"real-test-{index}",
+            meta={"verify": verify},
         )
         for index in range(request_count)
     ]
@@ -122,7 +122,7 @@ async def main() -> None:
     for index, proxy in enumerate(proxies):
         print(f"[真实请求示例] 创建独立客户端 - index: {index} proxy: {proxy.socks5h_url}")
         client = ProxyClient(
-            proxy_url=proxy.socks5_url,
+            proxy_url=proxy.proxy_url,
             limits=Limits(
                 concurrency=1,
                 connector_limit=1,
@@ -134,7 +134,6 @@ async def main() -> None:
             verbose=True,
             default_headers={"accept-language": "en-US,en;q=0.9"},
         )
-        # client.sticky_header("x-ipweb-session", proxy.session_state_hint())
         clients.append(client)
 
     print(
@@ -164,7 +163,7 @@ async def main() -> None:
             )
             response.close()
 
-        print(f"[真实请求示例] 集群指标快照 - metrics: {cluster.metrics_snapshot()}")
+        print(f"[真实请求示例] SDK自动统计指标 - metrics: {cluster.metrics_snapshot()}")
 
 
 if __name__ == "__main__":

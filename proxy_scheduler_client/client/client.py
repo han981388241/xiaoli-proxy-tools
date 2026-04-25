@@ -331,6 +331,8 @@ class ProxyClient:
             self.metrics.complete(
                 elapsed_ms=response.elapsed_ms,
                 bytes_received=_response_size(response),
+                status=response.status,
+                ok=response.ok,
             )
             if self.verbose:
                 self._log(
@@ -340,7 +342,7 @@ class ProxyClient:
             return response
         except ProxyClientError as exc:
             elapsed_ms = (time.perf_counter() - started) * 1000
-            self.metrics.fail(elapsed_ms=elapsed_ms)
+            self.metrics.fail(elapsed_ms=elapsed_ms, error_type=type(exc).__name__)
             if self.verbose:
                 self._log(
                     f"[代理客户端] 请求失败 - URL: {spec.url} 状态: None 重试: 1/1 "
@@ -357,7 +359,7 @@ class ProxyClient:
                 request_tag=spec.tag,
                 detail={"type": type(exc).__name__},
             )
-            self.metrics.fail(elapsed_ms=elapsed_ms)
+            self.metrics.fail(elapsed_ms=elapsed_ms, error_type=type(exc).__name__)
             if self.verbose:
                 self._log(
                     f"[代理客户端] 请求失败 - URL: {spec.url} 状态: None 重试: 1/1 "
