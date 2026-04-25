@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator
 
 from .core import DynamicProxyClient, Gateway, PreparedProxy
 from .geo import load_geo_index
@@ -50,7 +50,7 @@ class DynamicProxyGenerator:
         count: int = 1,
         country_code: str = "000",
         duration_minutes: int = 5,
-        session_id: str | None = None,
+        session_id: str | Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -62,7 +62,7 @@ class DynamicProxyGenerator:
             count (int): 生成数量，1 返回单个对象，大于 1 返回列表。
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
-            session_id (str | None): 自定义会话标识，仅单条生成时可用。
+            session_id (str | Callable[[], str] | None): 自定义会话标识，或返回会话标识的零参数函数。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -78,13 +78,14 @@ class DynamicProxyGenerator:
         if count == 0:
             return []
         if count > 1:
-            if session_id is not None:
-                raise ValueError("session_id cannot be used when count > 1")
+            if session_id is not None and not callable(session_id):
+                raise ValueError("当计数大于 1 时，不能使用 session_id。")
             if self.client.should_stream_generate(count):
                 return self.client.iter_build_proxy(
                     count,
                     country_code=country_code,
                     duration_minutes=duration_minutes,
+                    session_id=session_id if callable(session_id) else None,
                     state_code=state_code,
                     city_code=city_code,
                     protocol=protocol,
@@ -94,6 +95,7 @@ class DynamicProxyGenerator:
                 count,
                 country_code=country_code,
                 duration_minutes=duration_minutes,
+                session_id=session_id if callable(session_id) else None,
                 state_code=state_code,
                 city_code=city_code,
                 protocol=protocol,
@@ -117,6 +119,7 @@ class DynamicProxyGenerator:
         count: int,
         country_code: str = "000",
         duration_minutes: int = 5,
+        session_id: Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -128,6 +131,7 @@ class DynamicProxyGenerator:
             count (int): 生成数量。
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
+            session_id (Callable[[], str] | None): 返回会话标识的零参数函数；为空时使用 SDK 内置生成规则。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -143,6 +147,7 @@ class DynamicProxyGenerator:
             count,
             country_code=country_code,
             duration_minutes=duration_minutes,
+            session_id=session_id,
             state_code=state_code,
             city_code=city_code,
             protocol=protocol,
@@ -155,6 +160,7 @@ class DynamicProxyGenerator:
         *,
         country_code: str = "000",
         duration_minutes: int = 5,
+        session_id: Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -166,6 +172,7 @@ class DynamicProxyGenerator:
             count (int): 生成数量。
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
+            session_id (Callable[[], str] | None): 返回会话标识的零参数函数；为空时使用 SDK 内置生成规则。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -180,14 +187,14 @@ class DynamicProxyGenerator:
         normalized_count = self.client._normalize_count(count)
         if self.client.should_stream_generate(normalized_count):
             raise ValueError(
-                "generate_many() materializes the full result list in memory; "
-                "for huge counts use generate(count=...) and consume the iterator"
+                "generate_many() 将完整的结果列表加载到内存中；"
+                "对于巨大的计数，请使用 generate(count=...) 并消耗迭代器。"
             )
         result = self.generate(
             count=normalized_count,
             country_code=country_code,
             duration_minutes=duration_minutes,
-            session_id=None,
+            session_id=session_id,
             state_code=state_code,
             city_code=city_code,
             protocol=protocol,
@@ -303,7 +310,7 @@ class DynamicProxyGenerator:
 
         states = geo.states_by_country.get(country, frozenset())
         if state not in states:
-            raise ValueError(f"invalid state_code {state!r} for country_code {country!r}")
+            raise ValueError(f"无效的 state_code {state!r} 对应 country_code {country!r}")
 
         city_to_state = geo.city_to_state_by_country.get(country, {})
         cities = sorted(city for city, city_state in city_to_state.items() if city_state == state)
@@ -359,11 +366,11 @@ class DynamicProxyGenerator:
 
         country = self.client.normalize_country_code(country_code)
         if country == "000":
-            raise ValueError("country_code must be a specific country code, not '000'")
+            raise ValueError("country_code 必须是具体的国家代码，不能是“000”。")
         if not country or len(country) != 2:
-            raise ValueError("country_code must be a 2-letter ISO country code")
+            raise ValueError("country_code 必须是两位字母的 ISO 国家代码")
 
         geo = load_geo_index()
         if country not in geo.countries:
-            raise ValueError(f"unsupported country_code: {country}")
+            raise ValueError(f"不支持的国家代码：{country}")
         return country

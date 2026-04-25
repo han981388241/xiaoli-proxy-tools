@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -7,6 +8,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from proxy_scheduler import DynamicProxyGenerator
+
+
+def get_session():
+    return uuid.uuid4().hex
 
 
 def main() -> None:
@@ -89,15 +94,22 @@ def main() -> None:
         print("[生成器示例] 跳过地区查询 - country_code: 000")
 
     print(f"[生成器示例] 开始生成代理 - country_code: {country_code}")
+
+    session_id = '18a9831ba9869278b69a44b700000000'
+    print("session_id长度限制32: {}".format(len(session_id)))
+
     proxy = generator.generate(
-        count=1,
+        count=3,
         country_code=country_code,
         state_code=state_code,
         city_code=city_code,
         duration_minutes=duration_minutes,
         protocol=protocol,
+        # session_id=get_session,
+        session_id=session_id
 
     )
+    print(f"[生成器示例] 生成完成 - proxy_url: {proxy.proxy_url}")
     print(f"[生成器示例] 生成完成 - proxy_url: {proxy.safe_proxy_url}")
     print(f"[生成器示例] 生成完成 - http_url: {proxy.safe_proxies['http']}")
     print(f"[生成器示例] 生成完成 - https_url: {proxy.safe_proxies['https']}")

@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Callable, Iterator
 from urllib.parse import quote, urlsplit
 
 from .geo import load_geo_index
@@ -73,7 +73,7 @@ class Gateway:
 
         value = str(gateway or "apac").strip()
         if not value:
-            raise ValueError("gateway must not be empty")
+            raise ValueError("网关不能为空。")
 
         key = value.lower()
         if key in cls._ALIASES:
@@ -82,7 +82,7 @@ class Gateway:
         if "://" in value:
             parsed = urlsplit(value)
             if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
-                raise ValueError("gateway must not contain path, query or fragment")
+                raise ValueError("网关不得包含路径、查询或片段。")
             value = parsed.netloc
 
         candidate = value.lower()
@@ -92,7 +92,7 @@ class Gateway:
             return cls._OFFICIAL_GATEWAYS[candidate]
 
         supported = ", ".join(sorted(cls._ALIASES))
-        raise ValueError(f"unsupported gateway: {gateway!r}. Supported aliases: {supported}")
+        raise ValueError(f"不支持的网关：{gateway!r}。支持的别名：{supported}")
 
 
 @dataclass(frozen=True)
@@ -438,11 +438,11 @@ def _compose_session_id(timestamp_prefix: str, random_prefix: str, sequence: int
     """
 
     if not re.fullmatch(r"[0-9a-f]{16}", timestamp_prefix):
-        raise ValueError("timestamp_prefix must be a 16-character hexadecimal string")
+        raise ValueError("timestamp_prefix 必须是一个 16 个字符的十六进制字符串")
     if not re.fullmatch(r"[0-9a-f]{8}", random_prefix):
-        raise ValueError("random_prefix must be an 8-character hexadecimal string")
+        raise ValueError("random_prefix 必须是一个 8 位十六进制字符串")
     if sequence < 0 or sequence > 0xFFFFFFFF:
-        raise ValueError("sequence must be between 0 and 0xffffffff")
+        raise ValueError("序列必须介于 0 和 0xffffffff 之间")
     return f"{timestamp_prefix}{random_prefix}{sequence:08x}"
 
 
@@ -472,7 +472,7 @@ class DynamicProxyClient:
         except KeyError as exc:
             supported = ", ".join(sorted(_PROTOCOL_ALIASES))
             raise ValueError(
-                f"unsupported proxy protocol: {protocol!r}. Supported: {supported}"
+                f"不支持的代理协议：{protocol!r}。支持的：{supported}"
             ) from exc
 
     def __init__(self, *, user_id: str, password: str, gateway: str = "apac") -> None:
@@ -501,7 +501,7 @@ class DynamicProxyClient:
         *,
         country_code: str = "000",
         duration_minutes: int = 5,
-        session_id: str | None = None,
+        session_id: str | Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -513,7 +513,7 @@ class DynamicProxyClient:
         Args:
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
-            session_id (str | None): 自定义会话标识。
+            session_id (str | Callable[[], str] | None): 自定义会话标识，或返回会话标识的零参数函数。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -526,7 +526,7 @@ class DynamicProxyClient:
             ValueError: 参数不合法时抛出。
         """
 
-        sid = self.normalize_session_id(session_id or generate_session_id())
+        sid = self._resolve_single_session_id(session_id)
         options = self._normalize_proxy_options(
             country_code=country_code,
             duration_minutes=duration_minutes,
@@ -556,6 +556,7 @@ class DynamicProxyClient:
         *,
         country_code: str = "000",
         duration_minutes: int = 5,
+        session_id: Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -568,6 +569,7 @@ class DynamicProxyClient:
             count (int): 生成数量。
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
+            session_id (Callable[[], str] | None): 返回会话标识的零参数函数；为空时使用 SDK 内置生成规则。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -589,6 +591,7 @@ class DynamicProxyClient:
                 count,
                 country_code=country_code,
                 duration_minutes=duration_minutes,
+                session_id=session_id,
                 state_code=state_code,
                 city_code=city_code,
                 protocol=protocol,
@@ -602,6 +605,7 @@ class DynamicProxyClient:
         *,
         country_code: str = "000",
         duration_minutes: int = 5,
+        session_id: Callable[[], str] | None = None,
         state_code: str = "",
         city_code: str = "",
         protocol: str = "http",
@@ -614,6 +618,7 @@ class DynamicProxyClient:
             count (int): 生成数量。
             country_code (str): 国家代码，000 表示不限国家。
             duration_minutes (int): 会话时长，单位为分钟。
+            session_id (Callable[[], str] | None): 返回会话标识的零参数函数；为空时使用 SDK 内置生成规则。
             state_code (str): 州代码。
             city_code (str): 城市代码。
             protocol (str): 主代理协议。
@@ -641,7 +646,11 @@ class DynamicProxyClient:
         selected_protocol = options.protocol
         build_urls = self._build_proxy_urls
         yielded_count = 0
-        session_id_stream = self._iter_unique_session_ids(count)
+        session_id_stream = (
+            self._iter_custom_session_ids(session_id, count)
+            if session_id is not None
+            else self._iter_unique_session_ids(count)
+        )
 
         while yielded_count < count:
             sid = next(session_id_stream)
@@ -708,7 +717,7 @@ class DynamicProxyClient:
 
         value = str(session_id or "").strip().lower()
         if not _SESSION_ID_RE.fullmatch(value):
-            raise ValueError("session_id must be a 32-character hexadecimal string")
+            raise ValueError("session_id 必须是一个 32 个字符的十六进制字符串。")
         return value
 
     def validate_proxy_params(
@@ -772,7 +781,7 @@ class DynamicProxyClient:
         duration = self._normalize_duration(duration_minutes)
         if duration < MIN_DURATION_MINUTES or duration > MAX_DURATION_MINUTES:
             raise ValueError(
-                "duration_minutes must be between "
+                "duration_minutes 必须介于"
                 f"{MIN_DURATION_MINUTES} and {MAX_DURATION_MINUTES}"
             )
 
@@ -782,34 +791,34 @@ class DynamicProxyClient:
 
         if country_code == "000":
             if state_code:
-                raise ValueError("state_code requires a specific country_code, not '000'")
+                raise ValueError("state_code 需要特定的 country_code，不能是 '000'")
             if city_code:
-                raise ValueError("city_code requires a specific country_code, not '000'")
+                raise ValueError("city_code 需要特定的 country_code，不能是 '000'")
             return
 
         if not re.fullmatch(r"[A-Z]{2}", country_code):
-            raise ValueError("country_code must be '000' or a 2-letter ISO country code")
+            raise ValueError("country_code 必须为“000”或两位字母的 ISO 国家代码")
 
         geo = load_geo_index()
         if country_code not in geo.countries:
-            raise ValueError(f"unsupported country_code: {country_code}")
+            raise ValueError(f"不支持的国家/地区代码： {country_code}")
 
         if state_code and state_code not in geo.states_by_country.get(country_code, frozenset()):
             raise ValueError(
-                f"invalid state_code {state_code!r} for country_code {country_code!r}"
+                f"无效的 state_code {state_code!r}，对应的 country_code {country_code!r}"
             )
 
         if city_code:
             country_cities = geo.cities_by_country.get(country_code, frozenset())
             if city_code not in country_cities:
                 raise ValueError(
-                    f"invalid city_code {city_code!r} for country_code {country_code!r}"
+                    f"无效的城市代码 {city_code!r}，对应的国家代码为 {country_code!r}"
                 )
             if state_code:
                 expected_state = geo.city_to_state_by_country[country_code].get(city_code)
                 if expected_state != state_code:
                     raise ValueError(
-                        f"city_code {city_code!r} does not belong to state_code {state_code!r}"
+                        f"city_code {city_code!r} 不属于 state_code {state_code!r}"
                     )
 
     @staticmethod
@@ -828,13 +837,13 @@ class DynamicProxyClient:
         """
 
         if isinstance(duration_minutes, bool):
-            raise ValueError("duration_minutes must be an integer")
+            raise ValueError("duration_minutes 必须为整数")
         if isinstance(duration_minutes, int):
             return duration_minutes
 
         value = str(duration_minutes).strip()
         if not value.isdigit():
-            raise ValueError("duration_minutes must be an integer")
+            raise ValueError("duration_minutes 必须为整数")
         return int(value)
 
     @staticmethod
@@ -853,19 +862,19 @@ class DynamicProxyClient:
         """
 
         if isinstance(count, bool):
-            raise ValueError("count must be an integer")
+            raise ValueError("计数必须为整数")
         if isinstance(count, int):
             value = count
         else:
             text = str(count).strip()
             if not text.isdigit():
-                raise ValueError("count must be an integer")
+                raise ValueError("计数必须为整数")
             value = int(text)
 
         if value < 0:
-            raise ValueError("count must be >= 0")
+            raise ValueError("计数必须大于等于 0")
         if value > MAX_GENERATE_COUNT:
-            raise ValueError(f"count must be <= {MAX_GENERATE_COUNT}")
+            raise ValueError(f"计数必须大于等于 {MAX_GENERATE_COUNT}")
         return value
 
     def should_stream_generate(self, count: int) -> bool:
@@ -896,6 +905,43 @@ class DynamicProxyClient:
         for index in range(count):
             yield _compose_session_id(timestamp_prefix, random_prefix, index)
 
+    def _iter_custom_session_ids(
+        self,
+        session_id_factory: Callable[[], str],
+        count: int,
+    ) -> Iterator[str]:
+        """
+        使用用户提供的会话标识函数按顺序生成会话标识。
+
+        Args:
+            session_id_factory (Callable[[], str]): 返回会话标识的零参数函数。
+            count (int): 本次需要生成的数量。
+
+        Yields:
+            str: 标准化后的 32 位十六进制会话标识。
+        """
+
+        for _ in range(count):
+            yield self.normalize_session_id(session_id_factory())
+
+    def _resolve_single_session_id(
+        self,
+        session_id: str | Callable[[], str] | None,
+    ) -> str:
+        """
+        解析单条生成场景的会话标识。
+
+        Args:
+            session_id (str | Callable[[], str] | None): 自定义会话标识，或返回会话标识的零参数函数。
+
+        Returns:
+            str: 标准化后的 32 位十六进制会话标识。
+        """
+
+        if callable(session_id):
+            return self.normalize_session_id(session_id())
+        return self.normalize_session_id(session_id or generate_session_id())
+
     @staticmethod
     def _require_non_empty(name: str, value: str) -> str:
         """
@@ -914,7 +960,7 @@ class DynamicProxyClient:
 
         text = str(value or "").strip()
         if not text:
-            raise ValueError(f"{name} must not be empty")
+            raise ValueError(f"{name} 不能为空")
         return text
 
     @classmethod
@@ -934,7 +980,7 @@ class DynamicProxyClient:
 
         value = cls._require_non_empty("user_id", user_id)
         if not _USER_ID_RE.fullmatch(value):
-            raise ValueError("user_id only supports letters, numbers, underscore, dot and hyphen")
+            raise ValueError("user_id 仅支持字母、数字、下划线、点号和连字符。")
         return value
 
     @staticmethod
@@ -956,12 +1002,12 @@ class DynamicProxyClient:
             parsed_gateway = urlsplit(f"//{gateway}")
             port = parsed_gateway.port
         except ValueError as exc:
-            raise ValueError(f"invalid proxy gateway: {gateway!r}") from exc
+            raise ValueError(f"无效的代理网关： {gateway!r}") from exc
 
         if not parsed_gateway.hostname or port is None:
-            raise ValueError(f"invalid proxy gateway: {gateway!r}")
+            raise ValueError(f"无效的代理网关: {gateway!r}")
         if port <= 0 or port > 65535:
-            raise ValueError(f"invalid proxy gateway port: {port!r}")
+            raise ValueError(f"无效的代理网关端口： {port!r}")
         return parsed_gateway
 
     def _normalize_proxy_options(
