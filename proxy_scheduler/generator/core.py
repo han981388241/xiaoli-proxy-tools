@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Iterator
@@ -405,7 +406,44 @@ def generate_session_id() -> str:
         str: 32 位十六进制字符串。
     """
 
-    return uuid.uuid4().hex
+    timestamp_prefix, random_prefix = _new_batch_identity()
+    return _compose_session_id(timestamp_prefix, random_prefix, 0)
+
+
+def _new_batch_identity() -> tuple[str, str]:
+    """
+    生成单次调用级别的批次标识。
+
+    Returns:
+        tuple[str, str]: 16 位时间戳前缀和 8 位随机前缀。
+    """
+
+    return (f"{time.time_ns():016x}"[-16:], uuid.uuid4().hex[:8])
+
+
+def _compose_session_id(timestamp_prefix: str, random_prefix: str, sequence: int) -> str:
+    """
+    按固定格式拼装 32 位十六进制会话标识。
+
+    Args:
+        timestamp_prefix (str): 16 位时间戳前缀。
+        random_prefix (str): 8 位随机前缀。
+        sequence (int): 8 位递增序号。
+
+    Returns:
+        str: 32 位十六进制会话标识。
+
+    Raises:
+        ValueError: 输入前缀或序号越界时抛出。
+    """
+
+    if not re.fullmatch(r"[0-9a-f]{16}", timestamp_prefix):
+        raise ValueError("timestamp_prefix must be a 16-character hexadecimal string")
+    if not re.fullmatch(r"[0-9a-f]{8}", random_prefix):
+        raise ValueError("random_prefix must be an 8-character hexadecimal string")
+    if sequence < 0 or sequence > 0xFFFFFFFF:
+        raise ValueError("sequence must be between 0 and 0xffffffff")
+    return f"{timestamp_prefix}{random_prefix}{sequence:08x}"
 
 
 class DynamicProxyClient:
@@ -845,7 +883,7 @@ class DynamicProxyClient:
 
     def _iter_unique_session_ids(self, count: int) -> Iterator[str]:
         """
-        为单次批量生成按顺序产出全局唯一的 32 位十六进制会话标识。
+        为单次批量生成按顺序产出“时间戳前缀 + 随机前缀 + 递增序号”的 32 位十六进制会话标识。
 
         Args:
             count (int): 本次需要生成的数量。
@@ -854,9 +892,9 @@ class DynamicProxyClient:
             str: 32 位十六进制会话标识。
         """
 
-        call_prefix = uuid.uuid4().hex[:16]
+        timestamp_prefix, random_prefix = _new_batch_identity()
         for index in range(count):
-            yield f"{call_prefix}{index:016x}"
+            yield _compose_session_id(timestamp_prefix, random_prefix, index)
 
     @staticmethod
     def _require_non_empty(name: str, value: str) -> str:

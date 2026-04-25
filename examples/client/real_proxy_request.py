@@ -111,8 +111,8 @@ async def main() -> None:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
             },
             timeout=timeout,
-            tag=f"real-test-{index}",
-            meta={"verify": verify},
+            # tag=f"real-test-{index}",
+            # meta={"verify": verify},
         )
         for index in range(request_count)
     ]
@@ -133,7 +133,7 @@ async def main() -> None:
             verbose=True,
             default_headers={"accept-language": "en-US,en;q=0.9"},
         )
-        client.sticky_header("x-ipweb-session", proxy.session_state_hint())
+        # client.sticky_header("x-ipweb-session", proxy.session_state_hint())
         clients.append(client)
 
     print(

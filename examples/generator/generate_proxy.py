@@ -63,6 +63,7 @@ def main() -> None:
         user_id=user_id,
         password=password,
         gateway=gateway,
+
     )
 
     print(f"[生成器示例] 查询全部地区代码")
@@ -95,6 +96,7 @@ def main() -> None:
         city_code=city_code,
         duration_minutes=duration_minutes,
         protocol=protocol,
+
     )
     print(f"[生成器示例] 生成完成 - proxy_url: {proxy.safe_proxy_url}")
     print(f"[生成器示例] 生成完成 - http_url: {proxy.safe_proxies['http']}")
